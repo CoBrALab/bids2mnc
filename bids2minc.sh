@@ -119,9 +119,8 @@ __base="$(basename "${__file}" .sh)"
 # shellcheck disable=SC2034,SC2015
 __invocation="$(printf %q "${__file}")$( (($#)) && printf ' %q' "$@" || true)"
 
-# Read and cache
+# Read BIDS structure
 csv_data=$(libBIDSsh_parse_bids_to_csv "${_arg_bids_path}")
-printf "%s" "${csv_data}" >cache.csv
 
 # Drop all columns which contain only NA
 csv_data=$(libBIDSsh_drop_na_columns "${csv_data}")
@@ -133,7 +132,13 @@ csv_data=$(libBIDSsh_extension_json_rows_to_column_json_path "${csv_data}")
 images_csv=$(libBIDSsh_csv_filter "${csv_data}" -r "extension:(nii|nii.gz)")
 declare -A image_row
 while libBIDS_csv_iterator "${images_csv}" image_row; do
-  nii2mnc ${image_row[path]} "$(dirname ${image_row[path]})/$(basename ${image_row[path]} | extension_strip).mnc"
+  # Strip the prefix from the full path
+  relative_path="${image_row[path]#$_arg_bids_path}"
+  # Remove any leading slash (if the prefix didn't end with one)
+  relative_path="${relative_path#/}"
+  derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
+  mkdir -p ${derivatives_path}
+  nii2mnc -quiet "${image_row[path]}" "${derivatives_path}/$(basename ${image_row[path]} | extension_strip).mnc"
 done
 
 # Iterate through all JSON files and apply metadata
@@ -153,14 +158,21 @@ while libBIDS_csv_iterator "${images_csv}" json_row; do
   target_images_for_metadata=$(libBIDSsh_csv_filter "${csv_data}" ${row_filters[*]} -r "extension:(nii|nii.gz)" -c path)
   declare -A target_images_for_metadata_row
   while libBIDS_csv_iterator "${target_images_for_metadata}" target_images_for_metadata_row; do
+  # Strip the prefix from the full path
+  relative_path="${target_images_for_metadata_row[path]#$_arg_bids_path}"
+  # Remove any leading slash (if the prefix didn't end with one)
+  relative_path="${relative_path#/}"
+  derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
     declare -A json
     if [[ ${json_row[json_path]} != "NA" ]]; then
       libBIDSsh_json_to_associative_array ${json_row[json_path]} json
       for key in "${!json[@]}"; do
-        if [[ "${json[$key]}" =~ ^string: || "${json[$key]}" =~ ^array: ]]; then
-          minc_modify_header "$(dirname ${target_images_for_metadata_row[path]})/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+        if [[ "${json[$key]}" =~ ^string: ]]; then
+          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+        elif [[ "${json[$key]}" =~ ^array: ]]; then
+          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
         elif [[ "${json[$key]}" =~ ^number: ]]; then
-          minc_modify_header "$(dirname ${target_images_for_metadata_row[path]})/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
+          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
         fi
       done
     fi
