@@ -2,10 +2,12 @@
 
 # ARG_HELP([A tool to generate metadata-rich MINC files from a BIDS dataset])
 
+# ARG_OPTIONAL_REPEATED([row-filter],[r],[Filter BIDS files for conversion using regex on row content format <column_name>:<regex_pattern>],[])
+
 # ARG_OPTIONAL_BOOLEAN([debug],[],[Debug mode, print all commands to stdout],[])
 # ARG_OPTIONAL_BOOLEAN([dry-run],[],[Dry run, don't run any commands, implies debug],[])
 
-# ARG_POSITIONAL_INF([bids_path],[Input text file, one line per input],[1])
+# ARG_POSITIONAL_SINGLE([bids_path],[Path to BIDS dataset],[])
 # ARGBASH_SET_INDENT([  ])
 # ARGBASH_GO()
 # needed because of Argbash --> m4_ignore([
@@ -13,82 +15,105 @@
 # Argbash is a bash code generator used to get arguments parsing right.
 # Argbash is FREE SOFTWARE, see https://argbash.dev for more info
 
-die() {
+
+die()
+{
   local _ret="${2:-1}"
   test "${_PRINT_HELP:-no}" = yes && print_help >&2
   echo "$1" >&2
   exit "${_ret}"
 }
 
-begins_with_short_option() {
-  local first_option all_short_options='h'
+
+begins_with_short_option()
+{
+  local first_option all_short_options='hr'
   first_option="${1:0:1}"
   test "$all_short_options" = "${all_short_options/$first_option/}" && return 1 || return 0
 }
 
 # THE DEFAULTS INITIALIZATION - POSITIONALS
 _positionals=()
-_arg_bids_path=('')
 # THE DEFAULTS INITIALIZATION - OPTIONALS
+_arg_row_filter=()
 _arg_debug="off"
 _arg_dry_run="off"
 
-print_help() {
+
+print_help()
+{
   printf '%s\n' "A tool to generate metadata-rich MINC files from a BIDS dataset"
-  printf 'Usage: %s [-h|--help] [--(no-)debug] [--(no-)dry-run] <bids_path-1> [<bids_path-2>] ... [<bids_path-n>] ...\n' "$0"
-  printf '\t%s\n' "<bids_path>: Input text file, one line per input"
+  printf 'Usage: %s [-h|--help] [-r|--row-filter <arg>] [--(no-)debug] [--(no-)dry-run] <bids_path>\n' "$0"
+  printf '\t%s\n' "<bids_path>: Path to BIDS dataset"
   printf '\t%s\n' "-h, --help: Prints help"
+  printf '\t%s\n' "-r, --row-filter: Filter BIDS files for conversion using regex on row content format <column_name>:<regex_pattern> (empty by default)"
   printf '\t%s\n' "--debug, --no-debug: Debug mode, print all commands to stdout (off by default)"
   printf '\t%s\n' "--dry-run, --no-dry-run: Dry run, don't run any commands, implies debug (off by default)"
 }
 
-parse_commandline() {
+
+parse_commandline()
+{
   _positionals_count=0
   local _key
-  while test $# -gt 0; do
+  while test $# -gt 0
+  do
     _key="$1"
     case "$_key" in
-    -h | --help)
-      print_help
-      exit 0
-      ;;
-    -h*)
-      print_help
-      exit 0
-      ;;
-    --no-debug | --debug)
-      _arg_debug="on"
-      test "${1:0:5}" = "--no-" && _arg_debug="off"
-      ;;
-    --no-dry-run | --dry-run)
-      _arg_dry_run="on"
-      test "${1:0:5}" = "--no-" && _arg_dry_run="off"
-      ;;
-    *)
-      _last_positional="$1"
-      _positionals+=("$_last_positional")
-      _positionals_count=$((_positionals_count + 1))
-      ;;
+      -h|--help)
+        print_help
+        exit 0
+        ;;
+      -h*)
+        print_help
+        exit 0
+        ;;
+      -r|--row-filter)
+        test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+        _arg_row_filter+=("$2")
+        shift
+        ;;
+      --row-filter=*)
+        _arg_row_filter+=("${_key##--row-filter=}")
+        ;;
+      -r*)
+        _arg_row_filter+=("${_key##-r}")
+        ;;
+      --no-debug|--debug)
+        _arg_debug="on"
+        test "${1:0:5}" = "--no-" && _arg_debug="off"
+        ;;
+      --no-dry-run|--dry-run)
+        _arg_dry_run="on"
+        test "${1:0:5}" = "--no-" && _arg_dry_run="off"
+        ;;
+      *)
+        _last_positional="$1"
+        _positionals+=("$_last_positional")
+        _positionals_count=$((_positionals_count + 1))
+        ;;
     esac
     shift
   done
 }
 
-handle_passed_args_count() {
+
+handle_passed_args_count()
+{
   local _required_args_string="'bids_path'"
-  test "${_positionals_count}" -ge 1 || _PRINT_HELP=yes die "FATAL ERROR: Not enough positional arguments - we require at least 1 (namely: $_required_args_string), but got only ${_positionals_count}." 1
+  test "${_positionals_count}" -ge 1 || _PRINT_HELP=yes die "FATAL ERROR: Not enough positional arguments - we require exactly 1 (namely: $_required_args_string), but got only ${_positionals_count}." 1
+  test "${_positionals_count}" -le 1 || _PRINT_HELP=yes die "FATAL ERROR: There were spurious positional arguments --- we expect exactly 1 (namely: $_required_args_string), but got ${_positionals_count} (the last one was: '${_last_positional}')." 1
 }
 
-assign_positional_args() {
+
+assign_positional_args()
+{
   local _positional_name _shift_for=$1
   _positional_names="_arg_bids_path "
-  _our_args=$((${#_positionals[@]} - 1))
-  for ((ii = 0; ii < _our_args; ii++)); do
-    _positional_names="$_positional_names _arg_bids_path[$((ii + 1))]"
-  done
 
   shift "$_shift_for"
-  for _positional_name in ${_positional_names}; do
+  for _positional_name in ${_positional_names}
+  do
     test $# -gt 0 || break
     eval "$_positional_name=\${1}" || die "Error during argument parsing, possibly an Argbash bug." 1
     shift
@@ -128,8 +153,18 @@ csv_data=$(libBIDSsh_drop_na_columns "${csv_data}")
 # Move image-file specific JSONs into a JSON column
 csv_data=$(libBIDSsh_extension_json_rows_to_column_json_path "${csv_data}")
 
-# Iterate through all imaging files and convert using nii2mnc
-images_csv=$(libBIDSsh_csv_filter "${csv_data}" -r "extension:(nii|nii.gz)")
+# Find all the images in the dataset
+images_csv="$(libBIDSsh_csv_filter "${csv_data}" -r "extension:(nii|nii.gz)")"
+
+# If we have a filter, apply it to the images CSV
+# We do it here so that the inherited metadata is not filtered out
+if [[ -n "${_arg_row_filter[*]}" ]]; then
+  # If we have filters, apply them
+  for filter in "${_arg_row_filter[@]}"; do
+    images_csv=$(libBIDSsh_csv_filter "${images_csv}" -r "${filter}")
+  done
+fi
+
 declare -A image_row
 while libBIDS_csv_iterator "${images_csv}" image_row; do
   # Strip the prefix from the full path
@@ -143,40 +178,45 @@ done
 
 # Iterate through all JSON files and apply metadata
 declare -A json_row
-while libBIDS_csv_iterator "${images_csv}" json_row; do
-  # Convenient ordering here is NA sorts first. This is safe because BIDS is all lowercase.
-  # This ensures we have the proper inheritance of metadata, general files are inserted before specific ones
-  # Construct a filter to filer the input dataset
-  row_filters=()
-  for key in "${!json_row[@]}"; do
-    if [[ ${json_row[$key]} != "NA" && ${key} != extension && ${key} != path && ${key} != __current_line && ${key} != json_path ]]; then
-      row_filters+=(-r ${key}:${json_row[$key]})
-    fi
-  done
+while libBIDS_csv_iterator "${csv_data}" json_row; do
+  if [[ ${json_row[json_path]} != "NA" ]]; then
+    # Convenient ordering here is NA sorts first. This is safe because BIDS is all lowercase.
+    # This ensures we have the proper inheritance of metadata, general files are inserted before specific ones
+    # Construct a filter to filter which files this JSON applies to
+    row_filters=()
+    for key in "${!json_row[@]}"; do
+      if [[ ${json_row[$key]} != "NA" && ${key} != extension && ${key} != path && ${key} != __current_line && ${key} != json_path ]]; then
+        row_filters+=(-r "${key}:${json_row[$key]}")
+      fi
+    done
 
-  # Filter for images which are associated with given metadata
-  target_images_for_metadata=$(libBIDSsh_csv_filter "${csv_data}" ${row_filters[*]} -r "extension:(nii|nii.gz)" -c path)
-  declare -A target_images_for_metadata_row
-  while libBIDS_csv_iterator "${target_images_for_metadata}" target_images_for_metadata_row; do
-  # Strip the prefix from the full path
-  relative_path="${target_images_for_metadata_row[path]#$_arg_bids_path}"
-  # Remove any leading slash (if the prefix didn't end with one)
-  relative_path="${relative_path#/}"
-  derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
-    declare -A json
-    if [[ ${json_row[json_path]} != "NA" ]]; then
-      libBIDSsh_json_to_associative_array ${json_row[json_path]} json
-      for key in "${!json[@]}"; do
-        if [[ "${json[$key]}" =~ ^string: ]]; then
-          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
-        elif [[ "${json[$key]}" =~ ^array: ]]; then
-          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
-        elif [[ "${json[$key]}" =~ ^number: ]]; then
-          minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
-        fi
-      done
-    fi
-  done
+    # Find all files that have matching metadata as the current JSON file being processed
+    target_images_for_metadata=$(libBIDSsh_csv_filter "${images_csv}" "${row_filters[@]}" -r "extension:(nii|nii.gz)" -c path)
+
+    # Iterate over each of the each of the target images and apply the metadata
+    declare -A target_images_for_metadata_row
+    while libBIDS_csv_iterator "${target_images_for_metadata}" target_images_for_metadata_row; do
+      # Strip the prefix from the full path
+      relative_path="${target_images_for_metadata_row[path]#$_arg_bids_path}"
+      # Remove any leading slash (if the prefix didn't end with one)
+      relative_path="${relative_path#/}"
+      derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
+      if [[ -s "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" ]]; then
+        declare -A json
+        libBIDSsh_json_to_associative_array ${json_row[json_path]} json
+        for key in "${!json[@]}"; do
+          # Here we rely on the fact that only the converted files above exist so we don't have to mess with filtering
+          if [[ "${json[$key]}" =~ ^string: ]]; then
+            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+          elif [[ "${json[$key]}" =~ ^array: ]]; then
+            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
+          elif [[ "${json[$key]}" =~ ^number: ]]; then
+            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
+          fi
+        done
+      fi
+    done
+  fi
 done
 
 # ] <-- needed because of Argbash
