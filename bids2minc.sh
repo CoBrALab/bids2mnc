@@ -3,9 +3,10 @@
 # ARG_HELP([A tool to generate metadata-rich MINC files from a BIDS dataset])
 
 # ARG_OPTIONAL_REPEATED([row-filter],[r],[Filter BIDS files for conversion using regex on row content format <column_name>:<regex_pattern>],[])
+# ARG_OPTIONAL_BOOLEAN([clobber],[],[Overwrite existing files],[])
 
 # ARG_OPTIONAL_BOOLEAN([debug],[],[Debug mode, print all commands to stdout],[])
-# ARG_OPTIONAL_BOOLEAN([dry-run],[],[Dry run, don't run any commands, implies debug],[])
+# ARG_OPTIONAL_BOOLEAN([dry-run],[],[Dry run, don't run any commands],[])
 
 # ARG_POSITIONAL_SINGLE([bids_path],[Path to BIDS dataset],[])
 # ARGBASH_SET_INDENT([  ])
@@ -15,18 +16,14 @@
 # Argbash is a bash code generator used to get arguments parsing right.
 # Argbash is FREE SOFTWARE, see https://argbash.dev for more info
 
-
-die()
-{
+die() {
   local _ret="${2:-1}"
   test "${_PRINT_HELP:-no}" = yes && print_help >&2
   echo "$1" >&2
   exit "${_ret}"
 }
 
-
-begins_with_short_option()
-{
+begins_with_short_option() {
   local first_option all_short_options='hr'
   first_option="${1:0:1}"
   test "$all_short_options" = "${all_short_options/$first_option/}" && return 1 || return 0
@@ -36,84 +33,80 @@ begins_with_short_option()
 _positionals=()
 # THE DEFAULTS INITIALIZATION - OPTIONALS
 _arg_row_filter=()
+_arg_clobber="off"
 _arg_debug="off"
 _arg_dry_run="off"
 
-
-print_help()
-{
+print_help() {
   printf '%s\n' "A tool to generate metadata-rich MINC files from a BIDS dataset"
-  printf 'Usage: %s [-h|--help] [-r|--row-filter <arg>] [--(no-)debug] [--(no-)dry-run] <bids_path>\n' "$0"
+  printf 'Usage: %s [-h|--help] [-r|--row-filter <arg>] [--(no-)clobber] [--(no-)debug] [--(no-)dry-run] <bids_path>\n' "$0"
   printf '\t%s\n' "<bids_path>: Path to BIDS dataset"
   printf '\t%s\n' "-h, --help: Prints help"
   printf '\t%s\n' "-r, --row-filter: Filter BIDS files for conversion using regex on row content format <column_name>:<regex_pattern> (empty by default)"
+  printf '\t%s\n' "--clobber, --no-clobber: Overwrite existing files (off by default)"
   printf '\t%s\n' "--debug, --no-debug: Debug mode, print all commands to stdout (off by default)"
   printf '\t%s\n' "--dry-run, --no-dry-run: Dry run, don't run any commands, implies debug (off by default)"
 }
 
-
-parse_commandline()
-{
+parse_commandline() {
   _positionals_count=0
   local _key
-  while test $# -gt 0
-  do
+  while test $# -gt 0; do
     _key="$1"
     case "$_key" in
-      -h|--help)
-        print_help
-        exit 0
-        ;;
-      -h*)
-        print_help
-        exit 0
-        ;;
-      -r|--row-filter)
-        test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
-        _arg_row_filter+=("$2")
-        shift
-        ;;
-      --row-filter=*)
-        _arg_row_filter+=("${_key##--row-filter=}")
-        ;;
-      -r*)
-        _arg_row_filter+=("${_key##-r}")
-        ;;
-      --no-debug|--debug)
-        _arg_debug="on"
-        test "${1:0:5}" = "--no-" && _arg_debug="off"
-        ;;
-      --no-dry-run|--dry-run)
-        _arg_dry_run="on"
-        test "${1:0:5}" = "--no-" && _arg_dry_run="off"
-        ;;
-      *)
-        _last_positional="$1"
-        _positionals+=("$_last_positional")
-        _positionals_count=$((_positionals_count + 1))
-        ;;
+    -h | --help)
+      print_help
+      exit 0
+      ;;
+    -h*)
+      print_help
+      exit 0
+      ;;
+    -r | --row-filter)
+      test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+      _arg_row_filter+=("$2")
+      shift
+      ;;
+    --row-filter=*)
+      _arg_row_filter+=("${_key##--row-filter=}")
+      ;;
+    -r*)
+      _arg_row_filter+=("${_key##-r}")
+      ;;
+    --no-clobber | --clobber)
+      _arg_clobber="on"
+      test "${1:0:5}" = "--no-" && _arg_clobber="off"
+      ;;
+    --no-debug | --debug)
+      _arg_debug="on"
+      test "${1:0:5}" = "--no-" && _arg_debug="off"
+      ;;
+    --no-dry-run | --dry-run)
+      _arg_dry_run="on"
+      test "${1:0:5}" = "--no-" && _arg_dry_run="off"
+      ;;
+    *)
+      _last_positional="$1"
+      _positionals+=("$_last_positional")
+      _positionals_count=$((_positionals_count + 1))
+      ;;
     esac
     shift
   done
 }
 
-
-handle_passed_args_count()
-{
+handle_passed_args_count() {
   local _required_args_string="'bids_path'"
   test "${_positionals_count}" -ge 1 || _PRINT_HELP=yes die "FATAL ERROR: Not enough positional arguments - we require exactly 1 (namely: $_required_args_string), but got only ${_positionals_count}." 1
   test "${_positionals_count}" -le 1 || _PRINT_HELP=yes die "FATAL ERROR: There were spurious positional arguments --- we expect exactly 1 (namely: $_required_args_string), but got ${_positionals_count} (the last one was: '${_last_positional}')." 1
 }
 
-
-assign_positional_args()
-{
+assign_positional_args() {
   local _positional_name _shift_for=$1
   _positional_names="_arg_bids_path "
 
   shift "$_shift_for"
-  for _positional_name in ${_positional_names}
-  do
+  for _positional_name in ${_positional_names}; do
     test $# -gt 0 || break
     eval "$_positional_name=\${1}" || die "Error during argument parsing, possibly an Argbash bug." 1
     shift
@@ -172,8 +165,15 @@ while libBIDS_csv_iterator "${images_csv}" image_row; do
   # Remove any leading slash (if the prefix didn't end with one)
   relative_path="${relative_path#/}"
   derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
-  mkdir -p ${derivatives_path}
-  nii2mnc -quiet "${image_row[path]}" "${derivatives_path}/$(basename ${image_row[path]} | extension_strip).mnc"
+  if [[ ! -s "${derivatives_path}/$(basename ${image_row[path]} | extension_strip).mnc" ]] || [[ "${_arg_clobber}" == "on" ]]; then
+    if [[ "${_arg_dry_run}" == "on" ]]; then
+      info mkdir -p "${derivatives_path}"
+      info nii2mnc -clobber -quiet "${image_row[path]}" "${derivatives_path}/$(basename ${image_row[path]} | extension_strip).mnc"
+    else
+      mkdir -p "${derivatives_path}"
+      nii2mnc -clobber -quiet "${image_row[path]}" "${derivatives_path}/$(basename ${image_row[path]} | extension_strip).mnc"
+    fi
+  fi
 done
 
 # Iterate through all JSON files and apply metadata
@@ -201,17 +201,29 @@ while libBIDS_csv_iterator "${csv_data}" json_row; do
       # Remove any leading slash (if the prefix didn't end with one)
       relative_path="${relative_path#/}"
       derivatives_path=${_arg_bids_path}/derivatives/bids2mnc/$(dirname ${relative_path})
-      if [[ -s "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" ]]; then
+      if [[ -s "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" || ${_arg_dry_run} == "on" ]]; then
         declare -A json
         libBIDSsh_json_to_associative_array ${json_row[json_path]} json
         for key in "${!json[@]}"; do
           # Here we rely on the fact that only the converted files above exist so we don't have to mess with filtering
           if [[ "${json[$key]}" =~ ^string: ]]; then
-            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+            if [[ "${_arg_dry_run}" == "on" ]]; then
+              info minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+            else
+              minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -sinsert "bids:${key}=${json[$key]#string:}"
+            fi
           elif [[ "${json[$key]}" =~ ^array: ]]; then
-            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
+            if [[ "${_arg_dry_run}" == "on" ]]; then
+              info minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
+            else
+              minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#array:}"
+            fi
           elif [[ "${json[$key]}" =~ ^number: ]]; then
-            minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
+            if [[ "${_arg_dry_run}" == "on" ]]; then
+              info minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
+            else
+              minc_modify_header "${derivatives_path}/$(basename ${target_images_for_metadata_row[path]} | extension_strip).mnc" -dinsert "bids:${key}=${json[$key]#number:}"
+            fi
           fi
         done
       fi
