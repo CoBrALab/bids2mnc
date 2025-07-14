@@ -129,7 +129,7 @@ function extension_strip() {
 
 function preflight_check() {
   # Prefight check for required programs
-  for program in nii2mnc minchistory minc_modify_header jq; do
+  for program in nii2mnc minc_modify_header jq; do
 
     if ! command -v ${program} &>/dev/null; then
       failure "Required program ${program} not found!"
