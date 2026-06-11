@@ -138,28 +138,28 @@ __base="$(basename "${__file}" .sh)"
 __invocation="$(printf %q "${__file}")$( (($#)) && printf ' %q' "$@" || true)"
 
 # Read BIDS structure
-csv_data=$(libBIDSsh_parse_bids_to_csv "${_arg_bids_path}")
+table_data=$(libBIDSsh_parse_bids_to_table "${_arg_bids_path}")
 
 # Drop all columns which contain only NA
-csv_data=$(libBIDSsh_drop_na_columns "${csv_data}")
+table_data=$(libBIDSsh_drop_na_columns "${table_data}")
 
 # Move image-file specific JSONs into a JSON column
-csv_data=$(libBIDSsh_extension_json_rows_to_column_json_path "${csv_data}")
+table_data=$(libBIDSsh_extension_json_rows_to_column_json_path "${table_data}")
 
 # Find all the images in the dataset
-images_csv="$(libBIDSsh_csv_filter "${csv_data}" -r "extension:(nii|nii.gz)")"
+images_table="$(libBIDSsh_table_filter "${table_data}" -r "extension:(nii|nii.gz)")"
 
-# If we have a filter, apply it to the images CSV
+# If we have a filter, apply it to the images table
 # We do it here so that the inherited metadata is not filtered out
 if [[ -n "${_arg_row_filter[*]}" ]]; then
   # If we have filters, apply them
   for filter in "${_arg_row_filter[@]}"; do
-    images_csv=$(libBIDSsh_csv_filter "${images_csv}" -r "${filter}")
+    images_table=$(libBIDSsh_table_filter "${images_table}" -r "${filter}")
   done
 fi
 
 declare -A image_row
-while libBIDS_csv_iterator "${images_csv}" image_row; do
+while libBIDSsh_table_iterator "${images_table}" image_row; do
   # Strip the prefix from the full path
   relative_path="${image_row[path]#$_arg_bids_path}"
   # Remove any leading slash (if the prefix didn't end with one)
@@ -178,7 +178,7 @@ done
 
 # Iterate through all JSON files and apply metadata
 declare -A json_row
-while libBIDS_csv_iterator "${csv_data}" json_row; do
+while libBIDSsh_table_iterator "${table_data}" json_row; do
   if [[ ${json_row[json_path]} != "NA" ]]; then
     # Convenient ordering here is NA sorts first. This is safe because BIDS is all lowercase.
     # This ensures we have the proper inheritance of metadata, general files are inserted before specific ones
@@ -191,11 +191,11 @@ while libBIDS_csv_iterator "${csv_data}" json_row; do
     done
 
     # Find all files that have matching metadata as the current JSON file being processed
-    target_images_for_metadata=$(libBIDSsh_csv_filter "${images_csv}" "${row_filters[@]}" -r "extension:(nii|nii.gz)" -c path)
+    target_images_for_metadata=$(libBIDSsh_table_filter "${images_table}" "${row_filters[@]}" -r "extension:(nii|nii.gz)" -c path)
 
     # Iterate over each of the each of the target images and apply the metadata
     declare -A target_images_for_metadata_row
-    while libBIDS_csv_iterator "${target_images_for_metadata}" target_images_for_metadata_row; do
+    while libBIDSsh_table_iterator "${target_images_for_metadata}" target_images_for_metadata_row; do
       # Strip the prefix from the full path
       relative_path="${target_images_for_metadata_row[path]#$_arg_bids_path}"
       # Remove any leading slash (if the prefix didn't end with one)
